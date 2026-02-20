@@ -69,31 +69,15 @@ if((NOT DFA_XTRA STREQUAL "") AND (NOT PNG_LIBCONF_HEADER STREQUAL ""))
                      "are mutually exclusive")
 endif()
 
-# Allow the users to switch on/off various library build types.
-option(PNG_SHARED "Build libpng as a shared library" ON)
-option(PNG_STATIC "Build libpng as a static library" ON)
-if(APPLE)
-  option(PNG_FRAMEWORK "Build libpng as a framework bundle" ON)
-else()
-  option(PNG_FRAMEWORK "Build libpng as a framework bundle (not available on this platform)" OFF)
-endif()
-if(NOT APPLE AND PNG_FRAMEWORK)
-  message(SEND_ERROR "The option PNG_FRAMEWORK should not be set on this platform")
-endif()
-
 # Allow the users to switch on/off the auxiliary build and test artifacts.
 # These artifacts are NOT part of libpng proper, and are subject to change
 # at any time.
-option(PNG_TESTS "Build the libpng tests" ON)
+option(PNG_TESTS "Build the libpng tests" OFF)
 
 # Same as above, but for the third-party tools.
 # Although these tools are targeted at development environments only,
 # the users are allowed to override the option to build by default.
-if(ANDROID OR IOS)
-  option(PNG_TOOLS "Build the libpng tools" OFF)
-else()
-  option(PNG_TOOLS "Build the libpng tools" ON)
-endif()
+option(PNG_TOOLS "Build the libpng tools" OFF)
 
 # Maintain backwards compatibility with the deprecated option PNG_EXECUTABLES.
 option(PNG_EXECUTABLES "[Deprecated; please use PNG_TOOLS]" ON)
@@ -138,7 +122,9 @@ if(PNG_BUILD_ZLIB)
 endif()
 
 # Find the zlib library.
-find_package(ZLIB REQUIRED)
+if (NOT TARGET ZLIB::ZLIB)
+  find_package(ZLIB REQUIRED)
+endif ()
 set(PNG_LINK_LIBRARIES ZLIB::ZLIB)
 
 # Find the math library (unless we already know it's not available or
@@ -400,125 +386,46 @@ set(png_fix_itxt_sources
     contrib/tools/png-fix-itxt.c
 )
 
-# Now build our targets.
-
-# Initialize the list of libpng library targets.
-set(PNG_LIBRARY_TARGETS "")
-
-# Initialize the libpng library file names.
-if(UNIX
-   OR (WIN32 AND NOT CMAKE_SHARED_LIBRARY_PREFIX STREQUAL "")
-   OR (WIN32 AND NOT CMAKE_STATIC_LIBRARY_PREFIX STREQUAL ""))
-  # We are on a Unix or Unix-like toolchain like the GNU toolchain on Windows.
-  # Library file names are expected to have an implicit prefix such as "lib".
-  # Let CMake prepend and append its usual prefixes and suffixes by default.
-  set(PNG_SHARED_OUTPUT_NAME "png${PNGLIB_ABI_VERSION}")
-  set(PNG_STATIC_OUTPUT_NAME "png${PNGLIB_ABI_VERSION}")
-else()
-  # We are, most likely, on a Windows toolchain like MSVC, Clang on Windows,
-  # Borland/Embarcadero, etc. We need to specify the "libpng" name explicitly.
-  # We also need to use a custom suffix, in order to distinguish between the
-  # shared import library name and the static library name.
-  set(PNG_SHARED_OUTPUT_NAME "libpng${PNGLIB_ABI_VERSION}")
-  set(PNG_STATIC_OUTPUT_NAME "libpng${PNGLIB_ABI_VERSION}_static")
-endif()
-
-if(PNG_SHARED)
-  add_library(png_shared SHARED ${libpng_sources})
-  add_dependencies(png_shared png_genfiles)
-  list(APPEND PNG_LIBRARY_TARGETS png_shared)
-  set_target_properties(png_shared
-                        PROPERTIES OUTPUT_NAME "${PNG_SHARED_OUTPUT_NAME}"
-                                   DEBUG_POSTFIX "${PNG_DEBUG_POSTFIX}"
-                                   VERSION "${PNGLIB_SHARED_VERSION}"
-                                   SOVERSION "${PNGLIB_ABI_VERSION}")
+add_library(png ${libpng_sources})
+add_dependencies(png png_genfiles)
+set_target_properties(png
+                      PROPERTIES OUTPUT_NAME "png${PNGLIB_ABI_VERSION}"
+                                 DEBUG_POSTFIX "${PNG_DEBUG_POSTFIX}"
+                                 VERSION "${PNGLIB_SHARED_VERSION}"
+                                 SOVERSION "${PNGLIB_ABI_VERSION}")
+if (BUILD_SHARED_LIBS)
   if(UNIX AND AWK)
     if(HAVE_LD_VERSION_SCRIPT)
-      set_target_properties(png_shared
+      set_target_properties(png
                             PROPERTIES LINK_FLAGS "-Wl,--version-script='${CMAKE_CURRENT_BINARY_DIR}/libpng.vers'")
     elseif(HAVE_SOLARIS_LD_VERSION_SCRIPT)
-      set_target_properties(png_shared
+      set_target_properties(png
                             PROPERTIES LINK_FLAGS "-Wl,-M -Wl,'${CMAKE_CURRENT_BINARY_DIR}/libpng.vers'")
     endif()
   endif()
   if(APPLE)
-    # Avoid CMake's implicit compile definition "png_shared_EXPORTS".
-    set_target_properties(png_shared
+    # Avoid CMake's implicit compile definition "png_EXPORTS".
+    set_target_properties(png
                           PROPERTIES DEFINE_SYMBOL "")
   elseif(WIN32)
     # Use the explicit compile definition "PNG_BUILD_DLL" for Windows DLLs.
-    set_target_properties(png_shared
+    set_target_properties(png
                           PROPERTIES DEFINE_SYMBOL PNG_BUILD_DLL)
   endif()
-  target_include_directories(png_shared
-                             PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
-  target_include_directories(png_shared
-                             PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
-  target_include_directories(png_shared
-                             SYSTEM
-                             INTERFACE "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/libpng${PNGLIB_ABI_VERSION}>")
-  target_link_libraries(png_shared
-                        PUBLIC ${PNG_LINK_LIBRARIES})
-endif()
+endif ()
+target_include_directories(png
+                           PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
+target_include_directories(png
+                           PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
+target_include_directories(png
+                           SYSTEM
+                           INTERFACE "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/libpng${PNGLIB_ABI_VERSION}>")
+target_link_libraries(png
+                      PUBLIC ${PNG_LINK_LIBRARIES})
 
-if(PNG_STATIC)
-  add_library(png_static STATIC ${libpng_sources})
-  add_dependencies(png_static png_genfiles)
-  list(APPEND PNG_LIBRARY_TARGETS png_static)
-  set_target_properties(png_static
-                        PROPERTIES OUTPUT_NAME "${PNG_STATIC_OUTPUT_NAME}"
-                                   DEBUG_POSTFIX "${PNG_DEBUG_POSTFIX}")
-  target_include_directories(png_static
-                             PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
-  target_include_directories(png_static
-                             PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
-  target_include_directories(png_static
-                             SYSTEM
-                             INTERFACE "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/libpng${PNGLIB_ABI_VERSION}>")
-  target_link_libraries(png_static
-                        PUBLIC ${PNG_LINK_LIBRARIES})
-endif()
+add_library(PNG::PNG ALIAS png)
 
-if(PNG_FRAMEWORK AND NOT APPLE)
-  message(AUTHOR_WARNING "Setting PNG_FRAMEWORK to OFF, as it only applies to Apple systems")
-  set(PNG_FRAMEWORK OFF)
-endif()
-
-if(PNG_FRAMEWORK)
-  add_library(png_framework SHARED ${libpng_sources})
-  add_dependencies(png_framework png_genfiles)
-  list(APPEND PNG_LIBRARY_TARGETS png_framework)
-  set_target_properties(png_framework
-                        PROPERTIES FRAMEWORK TRUE
-                                   FRAMEWORK_VERSION "${PNGLIB_VERSION}"
-                                   MACOSX_FRAMEWORK_SHORT_VERSION_STRING "${PNGLIB_MAJOR}.${PNGLIB_MINOR}"
-                                   MACOSX_FRAMEWORK_BUNDLE_VERSION "${PNGLIB_VERSION}"
-                                   MACOSX_FRAMEWORK_IDENTIFIER "org.libpng.libpng"
-                                   XCODE_ATTRIBUTE_INSTALL_PATH "@rpath"
-                                   PUBLIC_HEADER "${libpng_public_hdrs}"
-                                   OUTPUT_NAME "png"
-                                   DEBUG_POSTFIX "${PNG_DEBUG_POSTFIX}")
-  # Avoid CMake's implicit compile definition "-Dpng_framework_EXPORTS".
-  set_target_properties(png_framework
-                        PROPERTIES DEFINE_SYMBOL "")
-  target_include_directories(png_framework
-                             PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
-  target_include_directories(png_framework
-                             PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
-  target_include_directories(png_framework
-                             SYSTEM
-                             INTERFACE "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/libpng${PNGLIB_ABI_VERSION}>")
-  target_link_libraries(png_framework
-                        PUBLIC ${PNG_LINK_LIBRARIES})
-endif()
-
-if(NOT PNG_LIBRARY_TARGETS)
-  message(SEND_ERROR "No library variant selected to build. "
-                     "Please enable at least one of the following options: "
-                     "PNG_SHARED, PNG_STATIC, PNG_FRAMEWORK")
-endif()
-
-if(PNG_TESTS AND PNG_SHARED)
+if(PNG_TESTS)
   enable_testing()
 
   # Include the internal module PNGTest.cmake
@@ -705,7 +612,7 @@ if(PNG_TESTS AND PNG_SHARED)
                FILES ${PNGSUITE_PNGS})
 endif()
 
-if(PNG_SHARED AND PNG_TOOLS)
+if(PNG_TOOLS)
   add_executable(pngfix ${pngfix_sources})
   target_link_libraries(pngfix
                         PRIVATE png_shared)
@@ -812,7 +719,7 @@ endif()
 
 # Install.
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
-  install(TARGETS ${PNG_LIBRARY_TARGETS}
+  install(TARGETS png
           EXPORT libpng
           RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
           LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
@@ -885,7 +792,7 @@ endif()
 
 # Create a CMake Config File that can be used via find_package(PNG CONFIG)
 if(NOT SKIP_INSTALL_CONFIG_FILE AND NOT SKIP_INSTALL_ALL)
-  install(TARGETS ${PNG_LIBRARY_TARGETS}
+  install(TARGETS png
           EXPORT PNGTargets
           RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
           LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
