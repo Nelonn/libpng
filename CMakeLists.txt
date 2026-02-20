@@ -423,7 +423,7 @@ target_include_directories(png
 target_link_libraries(png
                       PUBLIC ${PNG_LINK_LIBRARIES})
 
-add_library(PNG::PNG ALIAS png)
+add_library(PNG::png ALIAS png)
 
 if(PNG_TESTS)
   enable_testing()
